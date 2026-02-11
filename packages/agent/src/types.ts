@@ -1,5 +1,6 @@
 import type {
 	AssistantMessageEvent,
+	AutofixConfig,
 	ImageContent,
 	Message,
 	Model,
@@ -95,6 +96,16 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * Use this for follow-up messages that should wait until the agent finishes.
 	 */
 	getFollowUpMessages?: () => Promise<AgentMessage[]>;
+
+	/**
+	 * Configuration for autofixing malformed JSON tool calls.
+	 *
+	 * When enabled, the agent will attempt to fix broken JSON using a
+	 * secondary model before failing validation.
+	 *
+	 * @default undefined (autofix disabled)
+	 */
+	autofixConfig?: AutofixConfig;
 }
 
 /**
@@ -177,6 +188,9 @@ export interface AgentContext {
  * These events provide fine-grained lifecycle information for messages, turns, and tool executions.
  */
 export type AgentEvent =
+	// Autofix lifecycle
+	| { type: "autofix_start"; toolCallId: string; toolName: string }
+	| { type: "autofix_end"; toolCallId: string; toolName: string; success: boolean; error?: string }
 	// Agent lifecycle
 	| { type: "agent_start" }
 	| { type: "agent_end"; messages: AgentMessage[] }

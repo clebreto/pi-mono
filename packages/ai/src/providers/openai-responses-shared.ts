@@ -412,10 +412,11 @@ export async function processResponsesStream<TApi extends Api>(
 				});
 				currentBlock = null;
 			} else if (item.type === "function_call") {
+				// Use parseStreamingJson to gracefully handle malformed JSON
 				const args =
 					currentBlock?.type === "toolCall" && currentBlock.partialJson
-						? JSON.parse(currentBlock.partialJson)
-						: JSON.parse(item.arguments);
+						? parseStreamingJson(currentBlock.partialJson)
+						: parseStreamingJson(item.arguments);
 				const toolCall: ToolCall = {
 					type: "toolCall",
 					id: `${item.call_id}|${item.id}`,

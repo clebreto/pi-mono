@@ -4,6 +4,7 @@
  */
 
 import {
+	type AutofixConfig,
 	getModel,
 	type ImageContent,
 	type Message,
@@ -85,6 +86,13 @@ export interface AgentOptions {
 	 * Default: 60000 (60 seconds). Set to 0 to disable the cap.
 	 */
 	maxRetryDelayMs?: number;
+
+	/**
+	 * Configuration for autofixing malformed JSON tool calls.
+	 * When enabled, the agent will attempt to fix broken JSON using a
+	 * secondary model before failing validation.
+	 */
+	autofixConfig?: AutofixConfig;
 }
 
 export class Agent {
@@ -115,6 +123,7 @@ export class Agent {
 	private resolveRunningPrompt?: () => void;
 	private _thinkingBudgets?: ThinkingBudgets;
 	private _maxRetryDelayMs?: number;
+	private _autofixConfig?: AutofixConfig;
 
 	constructor(opts: AgentOptions = {}) {
 		this._state = { ...this._state, ...opts.initialState };
@@ -127,6 +136,7 @@ export class Agent {
 		this.getApiKey = opts.getApiKey;
 		this._thinkingBudgets = opts.thinkingBudgets;
 		this._maxRetryDelayMs = opts.maxRetryDelayMs;
+		this._autofixConfig = opts.autofixConfig;
 	}
 
 	/**
@@ -171,6 +181,21 @@ export class Agent {
 	 */
 	set maxRetryDelayMs(value: number | undefined) {
 		this._maxRetryDelayMs = value;
+	}
+
+	/**
+	 * Get the current autofix configuration.
+	 */
+	get autofixConfig(): AutofixConfig | undefined {
+		return this._autofixConfig;
+	}
+
+	/**
+	 * Set the autofix configuration for malformed JSON tool calls.
+	 * Set to undefined to disable autofix.
+	 */
+	set autofixConfig(value: AutofixConfig | undefined) {
+		this._autofixConfig = value;
 	}
 
 	get state(): AgentState {
@@ -409,6 +434,7 @@ export class Agent {
 			sessionId: this._sessionId,
 			thinkingBudgets: this._thinkingBudgets,
 			maxRetryDelayMs: this._maxRetryDelayMs,
+			autofixConfig: this._autofixConfig,
 			convertToLlm: this.convertToLlm,
 			transformContext: this.transformContext,
 			getApiKey: this.getApiKey,

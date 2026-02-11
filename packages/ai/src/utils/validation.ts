@@ -6,6 +6,8 @@ const Ajv = (AjvModule as any).default || AjvModule;
 const addFormats = (addFormatsModule as any).default || addFormatsModule;
 
 import type { Tool, ToolCall } from "../types.js";
+import type { AutofixConfig } from "./autofix.js";
+import { autofixJson } from "./autofix.js";
 
 // Detect if we're in a browser extension environment with strict CSP
 // Chrome extensions with Manifest V3 don't allow eval/Function constructor
@@ -81,4 +83,66 @@ export function validateToolArguments(tool: Tool, toolCall: ToolCall): any {
 	const errorMessage = `Validation failed for tool "${toolCall.name}":\n${errors}\n\nReceived arguments:\n${JSON.stringify(toolCall.arguments, null, 2)}`;
 
 	throw new Error(errorMessage);
+}
+
+/**
+ * Validates tool call arguments with autofix support for malformed JSON.
+ * This async version attempts to fix broken JSON before validation.
+ *
+ * @param tool The tool definition with TypeBox schema
+ * @param toolCall The tool call from the LLM
+ * @param autofixConfig Configuration for autofix (disabled by default)
+ * @param signal Abort signal for cancellation
+ * @returns The validated arguments
+ * @throws Error with formatted message if validation fails and autofix doesn't help
+ */
+export async function validateToolArgumentsWithAutofix(
+	tool: Tool,
+	toolCall: ToolCall,
+	autofixConfig?: AutofixConfig,
+	signal?: AbortSignal,
+): Promise<any> {
+	// First, try normal validation
+	try {
+		return validateToolArguments(tool, toolCall);
+	} catch (error) {
+		// If autofix is not enabled/configured, rethrow the error
+		if (!autofixConfig?.enabled) {
+			throw error;
+		}
+
+		// Check if arguments need fixing (might be a string or malformed)
+		let argsToFix: string | undefined;
+		if (typeof toolCall.arguments === "string") {
+			argsToFix = toolCall.arguments;
+		} else if (toolCall.arguments === null || toolCall.arguments === undefined) {
+			argsToFix = "{}";
+		}
+
+		// If we have something to fix, try autofix
+		if (argsToFix !== undefined) {
+			const fixResult = await autofixJson(argsToFix, autofixConfig, signal);
+
+			if (fixResult.success) {
+				// Create a new toolCall with fixed arguments
+				const fixedToolCall: ToolCall = {
+					...toolCall,
+					arguments: fixResult.fixed as any,
+				};
+
+				// Try validation again with fixed arguments
+				try {
+					return validateToolArguments(tool, fixedToolCall);
+				} catch (_fixError) {
+					// Even after fixing, validation failed
+					// Throw original error with note about autofix attempt
+					const originalMessage = error instanceof Error ? error.message : String(error);
+					throw new Error(`${originalMessage}\n\nNote: Attempted autofix but validation still failed.`);
+				}
+			}
+		}
+
+		// Autofix didn't help or wasn't applicable, rethrow original error
+		throw error;
+	}
 }

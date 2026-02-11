@@ -128,7 +128,9 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 							partial: output,
 						});
 					} else if (block.type === "toolCall") {
-						block.arguments = JSON.parse(block.partialArgs || "{}");
+						// Use parseStreamingJson to gracefully handle malformed JSON
+						// This prevents crashes when models generate invalid JSON
+						block.arguments = parseStreamingJson(block.partialArgs);
 						delete block.partialArgs;
 						stream.push({
 							type: "toolcall_end",

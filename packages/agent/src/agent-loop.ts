@@ -10,6 +10,7 @@ import {
 	streamSimple,
 	type ToolResultMessage,
 	validateToolArguments,
+	validateToolArgumentsWithAutofix,
 } from "@mariozechner/pi-ai";
 import type {
 	AgentContext,
@@ -159,6 +160,7 @@ async function runLoop(
 					message,
 					signal,
 					stream,
+					config,
 					config.getSteeringMessages,
 				);
 				toolResults.push(...toolExecution.toolResults);
@@ -296,6 +298,7 @@ async function executeToolCalls(
 	assistantMessage: AssistantMessage,
 	signal: AbortSignal | undefined,
 	stream: EventStream<AgentEvent, AgentMessage[]>,
+	config: AgentLoopConfig,
 	getSteeringMessages?: AgentLoopConfig["getSteeringMessages"],
 ): Promise<{ toolResults: ToolResultMessage[]; steeringMessages?: AgentMessage[] }> {
 	const toolCalls = assistantMessage.content.filter((c) => c.type === "toolCall");
@@ -319,7 +322,35 @@ async function executeToolCalls(
 		try {
 			if (!tool) throw new Error(`Tool ${toolCall.name} not found`);
 
-			const validatedArgs = validateToolArguments(tool, toolCall);
+			// Use autofix validation if configured, otherwise fall back to standard validation
+			let validatedArgs: any;
+			if (config.autofixConfig) {
+				stream.push({
+					type: "autofix_start",
+					toolCallId: toolCall.id,
+					toolName: toolCall.name,
+				});
+				try {
+					validatedArgs = await validateToolArgumentsWithAutofix(tool, toolCall, config.autofixConfig, signal);
+					stream.push({
+						type: "autofix_end",
+						toolCallId: toolCall.id,
+						toolName: toolCall.name,
+						success: true,
+					});
+				} catch (autofixError) {
+					stream.push({
+						type: "autofix_end",
+						toolCallId: toolCall.id,
+						toolName: toolCall.name,
+						success: false,
+						error: autofixError instanceof Error ? autofixError.message : String(autofixError),
+					});
+					throw autofixError;
+				}
+			} else {
+				validatedArgs = validateToolArguments(tool, toolCall);
+			}
 
 			result = await tool.execute(toolCall.id, validatedArgs, signal, (partialResult) => {
 				stream.push({
